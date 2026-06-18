@@ -1,5 +1,5 @@
 [workspace]
-authors = ["luanon404 <luanon404@gmail.com>"]
+authors = ["GnU-Chan <gnusocute@gmail.com>"]
 channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
 name = "logging-mojo"
 platforms = ["linux-64"]

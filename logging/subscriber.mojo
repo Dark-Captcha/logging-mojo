@@ -13,7 +13,7 @@ from logging.event import Event
 from logging.level import Level
 
 
-trait Subscriber(Copyable, ImplicitlyDeletable, Movable):
+trait Subscriber(Copyable, ImplicitlyDestructible, Movable):
     def on_event(mut self, mut event: Event):
         """Consume an event. The Event is borrowed mutably so a subscriber can
         move its `fields`/`message` into its own buffer if it needs to retain.

@@ -15,9 +15,7 @@
 from std.io import FileDescriptor
 from std.os import isatty, getenv
 
-from chrono import Rfc3339, DateTime, Offset
-from chrono.instant import Instant
-from chrono._core.clock_id import ClockId
+from chrono import Rfc3339, DateTime, Offset, Instant, ClockId
 
 from logging.event import Event
 from logging.field import (
