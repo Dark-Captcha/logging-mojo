@@ -1,0 +1,16 @@
+[workspace]
+authors = ["luanon404 <luanon404@gmail.com>"]
+channels = ["https://conda.modular.com/max-nightly", "conda-forge"]
+name = "logging-mojo"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+test = "mojo run -I . -I ../chrono-mojo tests/run_tests.mojo"
+bench = "mojo run -I . -I ../chrono-mojo benchmarks/bench.mojo"
+demo = "mojo run -I . -I ../chrono-mojo examples/demo.mojo"
+fmt = "mblack logging tests benchmarks examples"
+
+[dependencies]
+mojo-compiler = "==1.0.0b3.dev2026061706"
+mblack = "==26.5.0.dev2026061706"
