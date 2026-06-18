@@ -30,7 +30,7 @@ tests:
   - script:
       - if: unix
         then:
-          - mojo run -I . tests/run_tests.mojo
+          - mojo run -I . -I "$PREFIX/lib/mojo" tests/run_tests.mojo
     files:
       source:
         - logging/
