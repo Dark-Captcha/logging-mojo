@@ -1,6 +1,6 @@
 context:
   version: "0.1.0"
-  mojo_version: "=1.0.0b1"
+  mojo_version: "=1.0.0b3.dev2026061706"
 
 package:
   name: "logging-mojo"
@@ -14,7 +14,7 @@ build:
   number: 0
   script:
     - mkdir -p ${{ PREFIX }}/lib/mojo
-    - mojo package logging -o ${{ PREFIX }}/lib/mojo/logging.mojopkg
+    - mojo package logging -I ${{ PREFIX }}/lib/mojo -o ${{ PREFIX }}/lib/mojo/logging.mojopkg
 
 requirements:
   build:
