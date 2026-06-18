@@ -18,8 +18,7 @@ counterpart to `chrono-mojo` for observability.
 | Filtering                  | `EnvFilter` (`LOG=` grammar, per-target overrides), `Filtered[S]` wrapper                                                      |
 | Levels                     | `TRACE`, `DEBUG`, `INFO`, `WARN`, `ERROR`, `OFF` — totally ordered, parsed by `Level.parse`                                    |
 | Comptime gate              | `LOG_COMPILE_MIN_LEVEL` — calls below it are dead code (DCE-verified)                                                          |
-| Caller colour              | `Color` — ANSI SGR palette + style helpers (`paint`, `paint_if`, 16 FG, 16 bright, 16 BG, 16 bright BG, 256-color, truecolor)  |
-| Test suite                 | 22 green, `mblack` clean                                                                                                       |
+| Test suite                 | 14 green, `mblack` clean                                                                                                       |
 | Toolchain                  | `mojo-compiler 1.0.0b3.dev2026061706`, `mblack 26.5.0.dev2026061706`                                                           |
 
 ---
@@ -44,7 +43,7 @@ zero-FFI, monomorphized.
 | Zero cost when gated  | `comptime if Level.X >= LOG_COMPILE_MIN_LEVEL` wraps every level method. Calls below the build-time floor are dead code — verified by `test_comptime_gate_erases_trace` and the bench (`comptime-disabled trace: ~0 ns/call`).                                                                                                   |
 | Monomorphized sinks   | `Logger[FmtSubscriber]`, `Logger[Tee[A, B]]`, `Logger[Filtered[S]]` — each combination is a distinct type, direct call, no vtable. Composition is via type parameters, not runtime dispatch.                                                                                                                                     |
 | Pure Mojo, no FFI     | `from std.io import FileDescriptor` for stderr writes, `from std.os import getenv, isatty` for env / TTY detection. No `external_call`, no libc shim. Build = compile.                                                                                                                                                            |
-| Honest about colour   | `FmtSubscriber` paints level + target tokens itself, following `NO_COLOR` / `FORCE_COLOR` / `isatty(2)`. `Color` exposes the same decision (`Color.enabled()`) so caller-painted message bodies stay in sync.                                                                                                                     |
+| Honest about colour   | `FmtSubscriber` paints level + target tokens itself, following `NO_COLOR` / `FORCE_COLOR` / `isatty(2)`. Callers who want to colour message bodies use the standalone [`color-mojo`](https://github.com/Dark-Captcha/color-mojo) library, which exposes the same detection (`Support.is_enabled()`).                                                |
 
 ---
 
@@ -52,7 +51,7 @@ zero-FFI, monomorphized.
 
 ```bash
 pixi install
-pixi run test       # 22 tests
+pixi run test       # 14 tests
 pixi run bench      # latency numbers
 pixi run demo       # prints to stderr, set LOG= or NO_COLOR= to vary
 ```
@@ -80,27 +79,7 @@ LOG="info,h2=trace"        pixi run demo   # trace under any h2.* target, info e
 LOG="off,http_client=info" pixi run demo   # silence everything except http_client.*
 ```
 
-Caller-painted colour, gated on the same rules as the subscriber:
-
-```mojo
-import logging
-from logging import Field, Color
-
-def main() raises:
-    var log = logging.init()
-    var ansi = Color.enabled()      # NO_COLOR / FORCE_COLOR / isatty(2)
-
-    log.warn(
-        "slow " + Color.paint_if(ansi, Color.YELLOW, "(>300ms)"),
-        Field.float("rtt_ms", 312.4),
-    )
-    log.error(
-        Color.paint_if(ansi, Color.BOLD, "connection lost")
-            + " — "
-            + Color.paint_if(ansi, Color.RED, "10.0.0.5:443"),
-        Field.bool("will_retry", True),
-    )
-```
+Want coloured message bodies? Use [`color-mojo`](https://github.com/Dark-Captcha/color-mojo) — `pixi add color`, then `from color import red, bold, Support`. Its `Support.is_enabled()` follows the same `NO_COLOR` / `FORCE_COLOR` / `isatty(2)` rules `FmtSubscriber` uses, so the two stay in sync.
 
 ---
 
@@ -111,7 +90,6 @@ def main() raises:
 | Core              | `init`, `Logger`, `Level`, `Field`, `Value`, `Event`, `LOG_COMPILE_MIN_LEVEL`                                                        |
 | Subscribers       | `Subscriber` (trait), `FmtSubscriber`, `JsonSubscriber`, `TestSubscriber`, `CapturedEvent`, `NopSubscriber`, `Tee`                   |
 | Filtering         | `EnvFilter`, `Filtered`                                                                                                              |
-| Colour            | `Color` — constants (FG, bright FG, BG, bright BG, styles), `paint`, `paint_if`, `enabled`, `fg256`, `bg256`, `fg_rgb`, `bg_rgb`, named helpers (`red`, `green`, `bold`, etc.) |
 | Field value tags  | `TAG_STR`, `TAG_INT`, `TAG_FLOAT`, `TAG_BOOL`, `TAG_BYTES`                                                                           |
 
 ---
@@ -127,16 +105,11 @@ Numbers from `pixi run bench` on x86-64, `N = 200_000` iterations:
 | enabled INFO, no fields (`AlwaysOnNop` sink)               | ~44     |
 | enabled INFO, 3 fields                                     | ~145    |
 | `JsonSubscriber` + real `write(2)` (3 fields)              | ~1 400  |
-| `Color.paint(code, text)`                                  | ~13     |
-| `Color.paint_if(False, code, text)` (gated-off path)       | ~0      |
 
 The enabled-path cost sits in the same neighbourhood as Rust `tracing`'s
 field-attaching layer; the comptime-gated path produces no machine code
 at all, so a release binary with `LOG_COMPILE_MIN_LEVEL = WARN` carries
-zero overhead from trace/debug/info call sites. Caller-painted colour
-adds ~13 ns per painted token when ANSI is on and ~0 when it's off, so
-gating with `Color.paint_if(Color.enabled(), …)` is free under
-`NO_COLOR` or a non-TTY stderr.
+zero overhead from trace/debug/info call sites.
 
 ---
 
@@ -155,9 +128,8 @@ gating with `Color.paint_if(Color.enabled(), …)` is free under
 
 | Layer       | Check                                                                                                            |
 | ----------- | ---------------------------------------------------------------------------------------------------------------- |
-| Unit        | `tests/run_tests.mojo` — 22 tests, every test is a `def run() raises` that aborts on first mismatch.             |
+| Unit        | `tests/run_tests.mojo` — 14 tests, every test is a `def run() raises` that aborts on first mismatch.             |
 | Comptime    | `test_comptime_gate_erases_trace` proves `trace` under `LOG_COMPILE_MIN_LEVEL=DEBUG` is dead code (no capture).  |
-| Surface     | Color constants and helpers are asserted against literal ANSI SGR escape strings — drift fails the suite.       |
 | Format      | `FmtSubscriber._format` and `JsonSubscriber._format` are exercised on synthetic events with mixed field tags.   |
 | Probe       | `.probe/SYNTAX.md` carries the verified Mojo 1.0.0b3 idioms — port to a new nightly and re-verify, don't recall. |
 

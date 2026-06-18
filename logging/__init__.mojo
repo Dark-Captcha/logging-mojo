@@ -2,7 +2,6 @@
 # (`from logging import init, Logger, Field, Level`) rather than reaching into
 # submodules; the submodule layout is internal.
 
-from logging.color import Color
 from logging.event import Event
 from logging.field import (
     Field,
