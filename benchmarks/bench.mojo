@@ -10,6 +10,7 @@ from std.io import FileDescriptor
 from chrono import Instant
 
 from logging import (
+    Color,
     Field,
     Level,
     Logger,
@@ -28,9 +29,7 @@ comptime N: Int = 200_000
 def bench_comptime_disabled() raises:
     # `trace` is dead code at the default LOG_COMPILE_MIN_LEVEL=DEBUG.
     var sub = NopSubscriber()
-    var log = Logger[NopSubscriber](
-        sub^, min_level=Level.TRACE, target="bench"
-    )
+    var log = Logger[NopSubscriber](sub^, min_level=Level.TRACE, target="bench")
     var t0 = perf_counter_ns()
     for i in range(N):
         log.trace("nope", Field.int("i", i))
@@ -50,9 +49,7 @@ def bench_runtime_disabled() raises:
     # Calls below `min_level`. The comptime gate lets these through, but the
     # runtime compare drops them before any allocation.
     var sub = NopSubscriber()
-    var log = Logger[NopSubscriber](
-        sub^, min_level=Level.WARN, target="bench"
-    )
+    var log = Logger[NopSubscriber](sub^, min_level=Level.WARN, target="bench")
     var t0 = perf_counter_ns()
     for i in range(N):
         log.info("nope", Field.int("i", i))
@@ -127,7 +124,10 @@ def bench_fmt_to_stdout() raises:
     var iterations = N // 10  # actual writes are expensive; sample fewer
     for i in range(iterations):
         log.info(
-            "tick", Field.int("i", i), Field.str("k", "v"), Field.bool("ok", True)
+            "tick",
+            Field.int("i", i),
+            Field.str("k", "v"),
+            Field.bool("ok", True),
         )
     var t1 = perf_counter_ns()
     print(
@@ -143,6 +143,42 @@ from logging.event import Event
 from logging.subscriber import Subscriber
 
 
+def bench_color_paint() raises:
+    # One heap allocation per call: `code + text + RESET`. Numbers tell users
+    # how much it costs to paint a message body or a field value at the call
+    # site (relative to the ~33 ns enabled-no-fields path).
+    var t0 = perf_counter_ns()
+    var sink = String("")
+    for i in range(N):
+        sink = Color.paint(Color.RED, "x")
+    var t1 = perf_counter_ns()
+    print(
+        "Color.paint        :",
+        Float64(t1 - t0) / Float64(N),
+        "ns/call (last=",
+        len(sink),
+        "bytes)",
+    )
+
+
+def bench_color_paint_if_off() raises:
+    # `paint_if(False, ...)` is the gated-off path — should be cheap (no
+    # allocation, just returns the input). Useful as the lower bound for the
+    # caller-painted path under NO_COLOR.
+    var t0 = perf_counter_ns()
+    var sink = String("")
+    for i in range(N):
+        sink = Color.paint_if(False, Color.RED, "x")
+    var t1 = perf_counter_ns()
+    print(
+        "Color.paint_if(off):",
+        Float64(t1 - t0) / Float64(N),
+        "ns/call (last=",
+        len(sink),
+        "bytes)",
+    )
+
+
 def main() raises:
     print("logging-mojo bench (N =", N, ")")
     bench_comptime_disabled()
@@ -150,3 +186,5 @@ def main() raises:
     bench_enabled_alwayson_no_fields()
     bench_enabled_alwayson_3_fields()
     bench_fmt_to_stdout()
+    bench_color_paint()
+    bench_color_paint_if_off()

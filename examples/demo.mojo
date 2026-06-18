@@ -10,7 +10,9 @@ import logging
 from logging import Field, Color
 
 
-def serve_request(mut log: logging.Logger[logging.Filtered[logging.FmtSubscriber]]) raises:
+def serve_request(
+    mut log: logging.Logger[logging.Filtered[logging.FmtSubscriber]],
+) raises:
     var req_log = log.with_target("http_client.h2")
     var ansi = Color.enabled()  # gate caller-side colour on the same rules
     req_log.debug(
@@ -56,8 +58,8 @@ def main() raises:
     # NO_COLOR=1 or stderr isn't a TTY — same rule the subscriber uses.
     log.error(
         Color.paint_if(ansi, Color.BOLD, "connection lost")
-            + " — "
-            + Color.paint_if(ansi, Color.RED, "10.0.0.5:443"),
+        + " — "
+        + Color.paint_if(ansi, Color.RED, "10.0.0.5:443"),
         Field.bool("will_retry", True),
         Field.int("attempt", 2),
     )

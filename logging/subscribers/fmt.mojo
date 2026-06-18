@@ -20,7 +20,14 @@ from chrono.instant import Instant
 from chrono._core.clock_id import ClockId
 
 from logging.event import Event
-from logging.field import Field, TAG_STR, TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_BYTES
+from logging.field import (
+    Field,
+    TAG_STR,
+    TAG_INT,
+    TAG_FLOAT,
+    TAG_BOOL,
+    TAG_BYTES,
+)
 from logging.level import Level
 from logging.subscriber import Subscriber
 

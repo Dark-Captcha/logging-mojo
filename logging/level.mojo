@@ -111,9 +111,7 @@ struct Level(Comparable, TrivialRegisterPassable):
             return Level.ERROR
         if lc == "off":
             return Level.OFF
-        raise Error(
-            "logging.Level.parse: unrecognized level '" + text + "'"
-        )
+        raise Error("logging.Level.parse: unrecognized level '" + text + "'")
 
     comptime TRACE: Level = Level(UInt8(0))
     comptime DEBUG: Level = Level(UInt8(1))

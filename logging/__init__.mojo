@@ -4,7 +4,15 @@
 
 from logging.color import Color
 from logging.event import Event
-from logging.field import Field, Value, TAG_STR, TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_BYTES
+from logging.field import (
+    Field,
+    Value,
+    TAG_STR,
+    TAG_INT,
+    TAG_FLOAT,
+    TAG_BOOL,
+    TAG_BYTES,
+)
 from logging.filter.env import EnvFilter
 from logging.filter.filtered import Filtered
 from logging._init import init

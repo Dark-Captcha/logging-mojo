@@ -97,7 +97,7 @@ struct Value(Copyable, Movable):
         return self.tag == _TAG_BYTES
 
     @always_inline
-    def as_str(self) -> ref [self._str] String:
+    def as_str(self) -> ref[self._str] String:
         return self._str
 
     @always_inline
@@ -113,7 +113,7 @@ struct Value(Copyable, Movable):
         return self._bool
 
     @always_inline
-    def as_bytes(self) -> ref [self._bytes] List[UInt8]:
+    def as_bytes(self) -> ref[self._bytes] List[UInt8]:
         return self._bytes
 
 

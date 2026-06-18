@@ -13,7 +13,14 @@ from std.io import FileDescriptor
 from chrono import Rfc3339, DateTime, Offset
 
 from logging.event import Event
-from logging.field import Field, TAG_STR, TAG_INT, TAG_FLOAT, TAG_BOOL, TAG_BYTES
+from logging.field import (
+    Field,
+    TAG_STR,
+    TAG_INT,
+    TAG_FLOAT,
+    TAG_BOOL,
+    TAG_BYTES,
+)
 from logging.level import Level
 from logging.subscriber import Subscriber
 

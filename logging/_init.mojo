@@ -14,7 +14,9 @@ from logging.logger import Logger
 from logging.subscribers.fmt import FmtSubscriber
 
 
-def init(target: StaticString = "root") raises -> Logger[Filtered[FmtSubscriber]]:
+def init(
+    target: StaticString = "root",
+) raises -> Logger[Filtered[FmtSubscriber]]:
     """Build the default logger: env-filter + pretty stderr. The `target`
     parameter sets the Logger's default target for events emitted directly off
     it; downstream consumers should call `with_target` to fork a Logger with

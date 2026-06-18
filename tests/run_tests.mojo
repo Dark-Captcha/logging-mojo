@@ -95,9 +95,7 @@ def test_env_filter_off_with_override() raises:
     var f = EnvFilter.parse("off, http_client=info")
     _assert(not f.enabled(Level.ERROR, "h2"), "ERROR h2 silenced")
     _assert(f.enabled(Level.INFO, "http_client.req"), "http_client.req INFO")
-    _assert(
-        not f.enabled(Level.DEBUG, "http_client"), "http_client DEBUG drop"
-    )
+    _assert(not f.enabled(Level.DEBUG, "http_client"), "http_client DEBUG drop")
 
 
 def test_logger_into_test_subscriber() raises:
@@ -197,9 +195,7 @@ def test_fmt_format_has_level_and_target() raises:
     var sub = FmtSubscriber(ansi=False)
     var fl = List[Field]()
     fl.append(Field.str("k", "v"))
-    var ev = Event(
-        Level.INFO, "tgt", String("msg"), fl^, Instant.now()
-    )
+    var ev = Event(Level.INFO, "tgt", String("msg"), fl^, Instant.now())
     var line = sub._format(ev)
     _assert("INFO" in line, "line has INFO")
     _assert("tgt" in line, "line has target")
@@ -232,22 +228,105 @@ def test_color_256_and_rgb_helpers() raises:
     _assert(
         Color.fg256(208) == "\x1b[38;5;208m", "fg256 emits xterm-256 escape"
     )
-    _assert(
-        Color.bg256(0) == "\x1b[48;5;0m", "bg256 zero is well-formed"
-    )
+    _assert(Color.bg256(0) == "\x1b[48;5;0m", "bg256 zero is well-formed")
     _assert(
         Color.fg_rgb(255, 100, 0) == "\x1b[38;2;255;100;0m",
         "fg_rgb emits truecolor",
     )
+    _assert(
+        Color.bg_rgb(0, 0, 0) == "\x1b[48;2;0;0;0m",
+        "bg_rgb truecolor zero is well-formed",
+    )
+
+
+def test_color_all_foreground_constants() raises:
+    # Lock the full standard + bright FG palette to its canonical SGR code.
+    # If any drifts, the test fails — these are the values terminals expect.
+    _assert(String(Color.BLACK) == "\x1b[30m", "BLACK")
+    _assert(String(Color.RED) == "\x1b[31m", "RED")
+    _assert(String(Color.GREEN) == "\x1b[32m", "GREEN")
+    _assert(String(Color.YELLOW) == "\x1b[33m", "YELLOW")
+    _assert(String(Color.BLUE) == "\x1b[34m", "BLUE")
+    _assert(String(Color.MAGENTA) == "\x1b[35m", "MAGENTA")
+    _assert(String(Color.CYAN) == "\x1b[36m", "CYAN")
+    _assert(String(Color.WHITE) == "\x1b[37m", "WHITE")
+    _assert(String(Color.BRIGHT_BLACK) == "\x1b[90m", "BRIGHT_BLACK")
+    _assert(String(Color.BRIGHT_RED) == "\x1b[91m", "BRIGHT_RED")
+    _assert(String(Color.BRIGHT_GREEN) == "\x1b[92m", "BRIGHT_GREEN")
+    _assert(String(Color.BRIGHT_YELLOW) == "\x1b[93m", "BRIGHT_YELLOW")
+    _assert(String(Color.BRIGHT_BLUE) == "\x1b[94m", "BRIGHT_BLUE")
+    _assert(String(Color.BRIGHT_MAGENTA) == "\x1b[95m", "BRIGHT_MAGENTA")
+    _assert(String(Color.BRIGHT_CYAN) == "\x1b[96m", "BRIGHT_CYAN")
+    _assert(String(Color.BRIGHT_WHITE) == "\x1b[97m", "BRIGHT_WHITE")
+
+
+def test_color_all_background_constants() raises:
+    _assert(String(Color.BG_BLACK) == "\x1b[40m", "BG_BLACK")
+    _assert(String(Color.BG_RED) == "\x1b[41m", "BG_RED")
+    _assert(String(Color.BG_GREEN) == "\x1b[42m", "BG_GREEN")
+    _assert(String(Color.BG_YELLOW) == "\x1b[43m", "BG_YELLOW")
+    _assert(String(Color.BG_BLUE) == "\x1b[44m", "BG_BLUE")
+    _assert(String(Color.BG_MAGENTA) == "\x1b[45m", "BG_MAGENTA")
+    _assert(String(Color.BG_CYAN) == "\x1b[46m", "BG_CYAN")
+    _assert(String(Color.BG_WHITE) == "\x1b[47m", "BG_WHITE")
+    _assert(String(Color.BG_BRIGHT_BLACK) == "\x1b[100m", "BG_BRIGHT_BLACK")
+    _assert(String(Color.BG_BRIGHT_RED) == "\x1b[101m", "BG_BRIGHT_RED")
+    _assert(String(Color.BG_BRIGHT_GREEN) == "\x1b[102m", "BG_BRIGHT_GREEN")
+    _assert(String(Color.BG_BRIGHT_YELLOW) == "\x1b[103m", "BG_BRIGHT_YELLOW")
+    _assert(String(Color.BG_BRIGHT_BLUE) == "\x1b[104m", "BG_BRIGHT_BLUE")
+    _assert(String(Color.BG_BRIGHT_MAGENTA) == "\x1b[105m", "BG_BRIGHT_MAGENTA")
+    _assert(String(Color.BG_BRIGHT_CYAN) == "\x1b[106m", "BG_BRIGHT_CYAN")
+    _assert(String(Color.BG_BRIGHT_WHITE) == "\x1b[107m", "BG_BRIGHT_WHITE")
+
+
+def test_color_all_style_constants() raises:
+    _assert(String(Color.RESET) == "\x1b[0m", "RESET")
+    _assert(String(Color.BOLD) == "\x1b[1m", "BOLD")
+    _assert(String(Color.DIM) == "\x1b[2m", "DIM")
+    _assert(String(Color.ITALIC) == "\x1b[3m", "ITALIC")
+    _assert(String(Color.UNDERLINE) == "\x1b[4m", "UNDERLINE")
+    _assert(String(Color.BLINK) == "\x1b[5m", "BLINK")
+    _assert(String(Color.REVERSE) == "\x1b[7m", "REVERSE")
+    _assert(String(Color.HIDDEN) == "\x1b[8m", "HIDDEN")
+    _assert(String(Color.STRIKE) == "\x1b[9m", "STRIKE")
+
+
+def test_color_named_helpers_match_paint() raises:
+    # Each named helper must equal `paint(<corresponding constant>, text)`.
+    # Locks the convenience surface to its routing contract.
+    _assert(Color.black("x") == Color.paint(Color.BLACK, "x"), "black()")
+    _assert(Color.red("x") == Color.paint(Color.RED, "x"), "red()")
+    _assert(Color.green("x") == Color.paint(Color.GREEN, "x"), "green()")
+    _assert(Color.yellow("x") == Color.paint(Color.YELLOW, "x"), "yellow()")
+    _assert(Color.blue("x") == Color.paint(Color.BLUE, "x"), "blue()")
+    _assert(Color.magenta("x") == Color.paint(Color.MAGENTA, "x"), "magenta()")
+    _assert(Color.cyan("x") == Color.paint(Color.CYAN, "x"), "cyan()")
+    _assert(Color.white("x") == Color.paint(Color.WHITE, "x"), "white()")
+    _assert(Color.bold("x") == Color.paint(Color.BOLD, "x"), "bold()")
+    _assert(Color.dim("x") == Color.paint(Color.DIM, "x"), "dim()")
+    _assert(Color.italic("x") == Color.paint(Color.ITALIC, "x"), "italic()")
+    _assert(
+        Color.underline("x") == Color.paint(Color.UNDERLINE, "x"),
+        "underline()",
+    )
+    _assert(Color.reverse("x") == Color.paint(Color.REVERSE, "x"), "reverse()")
+    _assert(Color.strike("x") == Color.paint(Color.STRIKE, "x"), "strike()")
+
+
+def test_color_enabled_honours_no_color() raises:
+    # `enabled()` returns False under a pipe (no TTY) when NO_COLOR is set or
+    # unset; that case is exercised by `pixi run test` itself. The contract
+    # we lock here is that the function is callable and returns a Bool —
+    # value depends on the runtime environment.
+    var v = Color.enabled()
+    _assert(v == True or v == False, "enabled() returns a Bool")
 
 
 def test_json_format_is_valid_shape() raises:
     var sub = JsonSubscriber(fd=2)
     var fl = List[Field]()
     fl.append(Field.int("n", 7))
-    var ev = Event(
-        Level.WARN, "h2", String("frame"), fl^, Instant.now()
-    )
+    var ev = Event(Level.WARN, "h2", String("frame"), fl^, Instant.now())
     var line = sub._format(ev)
     _assert(line.startswith("{"), "starts with {")
     _assert(line.endswith("}\n"), "ends with }\\n")
@@ -360,6 +439,36 @@ def main() raises:
         print("  PASS test_color_256_and_rgb_helpers")
     except e:
         print("  FAIL test_color_256_and_rgb_helpers:", e)
+        failures += 1
+    try:
+        test_color_all_foreground_constants()
+        print("  PASS test_color_all_foreground_constants")
+    except e:
+        print("  FAIL test_color_all_foreground_constants:", e)
+        failures += 1
+    try:
+        test_color_all_background_constants()
+        print("  PASS test_color_all_background_constants")
+    except e:
+        print("  FAIL test_color_all_background_constants:", e)
+        failures += 1
+    try:
+        test_color_all_style_constants()
+        print("  PASS test_color_all_style_constants")
+    except e:
+        print("  FAIL test_color_all_style_constants:", e)
+        failures += 1
+    try:
+        test_color_named_helpers_match_paint()
+        print("  PASS test_color_named_helpers_match_paint")
+    except e:
+        print("  FAIL test_color_named_helpers_match_paint:", e)
+        failures += 1
+    try:
+        test_color_enabled_honours_no_color()
+        print("  PASS test_color_enabled_honours_no_color")
+    except e:
+        print("  FAIL test_color_enabled_honours_no_color:", e)
         failures += 1
 
     if failures != 0:

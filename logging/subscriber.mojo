@@ -13,7 +13,7 @@ from logging.event import Event
 from logging.level import Level
 
 
-trait Subscriber(Copyable, Movable, ImplicitlyDeletable):
+trait Subscriber(Copyable, ImplicitlyDeletable, Movable):
     def on_event(mut self, mut event: Event):
         """Consume an event. The Event is borrowed mutably so a subscriber can
         move its `fields`/`message` into its own buffer if it needs to retain.
@@ -71,6 +71,4 @@ struct Tee[A: Subscriber, B: Subscriber](Subscriber):
         # Either child wants it -> we want it. The child that doesn't will
         # decide for itself inside its own on_event (which is a cheap no-op
         # for NopSubscriber and a level compare for the others).
-        return self.a.enabled(level, target) or self.b.enabled(
-            level, target
-        )
+        return self.a.enabled(level, target) or self.b.enabled(level, target)
