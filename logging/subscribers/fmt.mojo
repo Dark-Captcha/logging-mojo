@@ -1,21 +1,23 @@
-# FmtSubscriber — the human-readable, ANSI-coloured default sink. One event in,
-# one buffered `String`, one `FileDescriptor(2).write` out. No allocator pool, no
-# background thread, no flush dance — every emit is a complete record at write
-# time, so a torn line is impossible on Linux up to PIPE_BUF (4 KiB), which is
-# longer than every realistic log line.
+# FmtSubscriber — human-readable ANSI-coloured default sink. One event in,
+# one buffered byte vector, one `FileDescriptor(2).write` out. The bytes are
+# built directly into a `List[UInt8]` (no String += chain) and then handed
+# to `String(from_utf8=...)` so the on-the-wire path is one heap allocation
+# and one syscall. A torn line is impossible on Linux up to PIPE_BUF (4 KiB);
+# every realistic log line stays well under that.
 #
 # Layout, in order:
 #
 #   2026-06-18T03:02:11.746Z  INFO http_client.h2: <message> key=value k2=v2
 #
-# Colours go on the level token only — colouring fields turns busy logs into
-# Christmas trees. Strings carrying whitespace / `=` / control bytes are
-# quoted (`"…"`) with backslash escapes; everything else is bare.
+# Colours go on the level token only (and the target when ANSI is on);
+# colouring field values turns busy logs into Christmas trees. Strings
+# carrying whitespace / `=` / control bytes are quoted (`"…"`) with backslash
+# escapes; everything else is bare.
 
 from std.io import FileDescriptor
 from std.os import isatty, getenv
 
-from chrono import Rfc3339, DateTime, Offset, Instant, ClockId
+from chrono import DateTime, Offset
 
 from logging.event import Event
 from logging.field import (
@@ -28,11 +30,25 @@ from logging.field import (
 )
 from logging.level import Level
 from logging.subscriber import Subscriber
+from logging._fmt_fast import (
+    write_byte,
+    write_bytes,
+    write_static,
+    write_int_signed,
+    write_bool,
+    write_hex,
+    write_rfc3339_into,
+)
 
 
-comptime _RESET = "\x1b[0m"
-comptime _DIM = "\x1b[2m"
-comptime _TARGET_FG = "\x1b[36m"  # cyan for the target column
+comptime _RESET: StaticString = "\x1b[0m"
+comptime _TARGET_FG: StaticString = "\x1b[36m"  # cyan for the target column
+comptime _SPACE: UInt8 = UInt8(ord(" "))
+comptime _COLON: UInt8 = UInt8(ord(":"))
+comptime _EQ: UInt8 = UInt8(ord("="))
+comptime _QUOTE: UInt8 = UInt8(ord('"'))
+comptime _BACKSLASH: UInt8 = UInt8(ord("\\"))
+comptime _NEWLINE: UInt8 = UInt8(ord("\n"))
 
 
 struct FmtSubscriber(Subscriber):
@@ -82,145 +98,108 @@ struct FmtSubscriber(Subscriber):
             pass
 
     def _format(self, event: Event) raises -> String:
-        var out = String("")
-        # Timestamp — project the realtime instant to a UTC DateTime and
-        # render with chrono's RFC 3339, then trim the fractional second to
-        # millisecond precision (the universal log convention; nanoseconds are
-        # noise on a human-read line, and the perf-counter clock is the right
-        # tool when a caller needs them).
+        # Reserve enough to cover the typical event (timestamp + level + target
+        # + short message + a few fields) without a resize. Larger events grow
+        # the buffer at most a couple of times.
+        var buf = List[UInt8](capacity=128)
+
+        # Timestamp — millisecond precision (3 fractional digits max). The
+        # subscriber does this directly so the whole event is one buffer,
+        # without a chrono String allocation and a post-trim pass.
         var dt = DateTime.from_utc_instant(event.timestamp)
-        var ts = Rfc3339.format(dt, Offset.UTC)
-        out += _trim_fractional_ms(ts)
-        out += " "
+        write_rfc3339_into(buf, dt, Offset.UTC, frac_max_digits=3)
+        buf.append(_SPACE)
 
         # Level — coloured + padded to keep the rest of the columns aligned.
         if self.ansi:
-            out += event.level.ansi_color()
-            out += event.level.name_padded()
-            out += _RESET
+            write_static(buf, event.level.ansi_color())
+            write_static(buf, event.level.name_padded())
+            write_static(buf, _RESET)
         else:
-            out += event.level.name_padded()
-        out += " "
+            write_static(buf, event.level.name_padded())
+        buf.append(_SPACE)
 
         # Target — dim cyan when ANSI is on.
         if self.ansi:
-            out += _TARGET_FG
-            out += event.target
-            out += _RESET
+            write_static(buf, _TARGET_FG)
+            write_bytes(buf, event.target.as_bytes())
+            write_static(buf, _RESET)
         else:
-            out += event.target
-        out += ": "
+            write_bytes(buf, event.target.as_bytes())
+        buf.append(_COLON)
+        buf.append(_SPACE)
 
-        # Message — raw, even if it contains whitespace; the message column is
-        # free-form by convention. Field values use the quoting rules below.
-        out += event.message
+        # Message — raw, even with whitespace; field values use quoting below.
+        write_bytes(buf, event.message.as_bytes())
 
         # Fields — space-separated `k=v`, in call-site order.
         for i in range(len(event.fields)):
-            out += " "
+            buf.append(_SPACE)
             ref f = event.fields[i]
-            out += f.key
-            out += "="
-            _append_value(out, f)
+            write_bytes(buf, f.key.as_bytes())
+            buf.append(_EQ)
+            _append_value(buf, f)
 
-        out += "\n"
-        return out
-
-
-def _trim_fractional_ms(ts: String) -> String:
-    # Cut everything between the ms third digit and the trailing zone designator.
-    # chrono emits ".nnnnnnnnnZ" (or "+HH:MM"); we look for the dot and the
-    # zone start, then splice. If no dot is present (e.g. integer-second
-    # instant), the string is returned unchanged.
-    var b = ts.as_bytes()
-    var n = len(b)
-    var dot = -1
-    for i in range(n):
-        if b[i] == UInt8(ord(".")):
-            dot = i
-            break
-    if dot == -1:
-        return ts
-    var zone = -1
-    for i in range(dot + 1, n):
-        var c = b[i]
-        if c == UInt8(ord("Z")) or c == UInt8(ord("+")) or c == UInt8(ord("-")):
-            zone = i
-            break
-    if zone == -1:
-        return ts
-    var keep = dot + 4  # dot + 3 fractional digits
-    if keep > zone:
-        keep = zone
-    var out = String("")
-    for i in range(0, keep):
-        out += chr(Int(b[i]))
-    for i in range(zone, n):
-        out += chr(Int(b[i]))
-    return out
+        buf.append(_NEWLINE)
+        return String(from_utf8=buf^)
 
 
-def _append_value(mut out: String, ref field: Field):
+# --- Field value rendering --------------------------------------------------
+
+
+def _append_value(mut buf: List[UInt8], ref field: Field):
     var tag = field.value.tag
     if tag == TAG_STR:
-        _append_string(out, field.value.as_str())
+        _append_string(buf, field.value.as_str().as_bytes())
     elif tag == TAG_INT:
-        out += String(field.value.as_int())
+        write_int_signed(buf, Int(field.value.as_int()))
     elif tag == TAG_FLOAT:
-        out += String(field.value.as_float())
+        # Mojo's `String(Float64)` is still the right primitive here — a
+        # custom Grisu/Ryu would dwarf the value-adds of this rewrite.
+        var s = String(field.value.as_float())
+        write_bytes(buf, s.as_bytes())
     elif tag == TAG_BOOL:
-        if field.value.as_bool():
-            out += "true"
-        else:
-            out += "false"
+        write_bool(buf, field.value.as_bool())
     elif tag == TAG_BYTES:
-        _append_bytes_hex(out, field.value.as_bytes())
+        write_static(buf, "0x")
+        write_hex(buf, field.value.as_bytes())
 
 
-def _append_string(mut out: String, s: String):
-    # Bare if the value is "safe" — no whitespace, no quote, no equals, no
-    # control bytes — else quote with backslash escapes for `"` and `\`. This
-    # is the same convention `slog` and `tracing-subscriber` use; it keeps
-    # `grep` happy on the bare case and stays unambiguous on the quoted one.
-    var b = s.as_bytes()
+def _append_string(mut buf: List[UInt8], bytes: Span[UInt8, _]):
+    # Bare if "safe" — no whitespace, no quote, no equals, no control bytes —
+    # else quote with backslash escapes for `"` and `\`. Same convention as
+    # `slog` / `tracing-subscriber`; bare keeps `grep` happy and quoted is
+    # unambiguous.
+    var n = len(bytes)
     var needs_quote = False
-    for i in range(len(b)):
-        var c = b[i]
+    for i in range(n):
+        var c = bytes[i]
         if (
             c <= UInt8(0x20)
-            or c == UInt8(ord('"'))
-            or c == UInt8(ord("="))
-            or c == UInt8(ord("\\"))
+            or c == _QUOTE
+            or c == _EQ
+            or c == _BACKSLASH
         ):
             needs_quote = True
             break
     if not needs_quote:
-        out += s
+        write_bytes(buf, bytes)
         return
-    out += '"'
-    for i in range(len(b)):
-        var c = b[i]
-        if c == UInt8(ord("\\")) or c == UInt8(ord('"')):
-            out += "\\"
-            out += chr(Int(c))
-        elif c == UInt8(ord("\n")):
-            out += "\\n"
+    buf.append(_QUOTE)
+    for i in range(n):
+        var c = bytes[i]
+        if c == _BACKSLASH or c == _QUOTE:
+            buf.append(_BACKSLASH)
+            buf.append(c)
+        elif c == _NEWLINE:
+            buf.append(_BACKSLASH)
+            buf.append(UInt8(ord("n")))
         elif c == UInt8(ord("\r")):
-            out += "\\r"
+            buf.append(_BACKSLASH)
+            buf.append(UInt8(ord("r")))
         elif c == UInt8(ord("\t")):
-            out += "\\t"
+            buf.append(_BACKSLASH)
+            buf.append(UInt8(ord("t")))
         else:
-            out += chr(Int(c))
-    out += '"'
-
-
-def _append_bytes_hex(mut out: String, ref bytes: List[UInt8]):
-    # Lowercase hex, no separator, prefixed with `0x` so it's unambiguous and
-    # one short token even for kilobyte payloads.
-    comptime HEX = "0123456789abcdef"
-    out += "0x"
-    var hb = HEX.as_bytes()
-    for i in range(len(bytes)):
-        var b = bytes[i]
-        out += chr(Int(hb[Int((b >> 4) & UInt8(0x0F))]))
-        out += chr(Int(hb[Int(b & UInt8(0x0F))]))
+            buf.append(c)
+    buf.append(_QUOTE)

@@ -7,10 +7,9 @@
 from std.time import perf_counter_ns
 from std.io import FileDescriptor
 
-from chrono import Instant
+from chrono import Instant, ClockId
 
 from logging import (
-    Color,
     Field,
     Level,
     Logger,
@@ -21,6 +20,8 @@ from logging import (
     NopSubscriber,
     TestSubscriber,
 )
+from logging.event import Event
+from logging.subscriber import Subscriber
 
 
 comptime N: Int = 200_000
@@ -139,21 +140,30 @@ def bench_fmt_to_stdout() raises:
     )
 
 
-from logging.event import Event
-from logging.subscriber import Subscriber
 
 
-def bench_color_paint() raises:
-    # One heap allocation per call: `code + text + RESET`. Numbers tell users
-    # how much it costs to paint a message body or a field value at the call
-    # site (relative to the ~33 ns enabled-no-fields path).
-    var t0 = perf_counter_ns()
+def bench_fmt_format_only() raises:
+    # FmtSubscriber._format directly — measures the per-event formatting cost
+    # without the kernel write overhead. This is the hot path inside the sink.
+    var sub = FmtSubscriber(ansi=False, fd=1)
+    var inst = Instant[ClockId.REALTIME].now()
+    var fl0 = List[Field]()
+    fl0.append(Field.int("i", 0))
+    fl0.append(Field.str("k", "v"))
+    fl0.append(Field.bool("ok", True))
+    var ev = Event(Level.INFO, "bench", String("tick"), fl0^, inst)
     var sink = String("")
-    for i in range(N):
-        sink = Color.paint(Color.RED, "x")
+    var t0 = perf_counter_ns()
+    for _ in range(N):
+        var fl = List[Field]()
+        fl.append(Field.int("i", 0))
+        fl.append(Field.str("k", "v"))
+        fl.append(Field.bool("ok", True))
+        ev = Event(Level.INFO, "bench", String("tick"), fl^, inst)
+        sink = sub._format(ev)
     var t1 = perf_counter_ns()
     print(
-        "Color.paint        :",
+        "fmt._format(3-fields):",
         Float64(t1 - t0) / Float64(N),
         "ns/call (last=",
         len(sink),
@@ -161,17 +171,26 @@ def bench_color_paint() raises:
     )
 
 
-def bench_color_paint_if_off() raises:
-    # `paint_if(False, ...)` is the gated-off path — should be cheap (no
-    # allocation, just returns the input). Useful as the lower bound for the
-    # caller-painted path under NO_COLOR.
-    var t0 = perf_counter_ns()
+def bench_json_format_only() raises:
+    var sub = JsonSubscriber(fd=1)
+    var inst = Instant[ClockId.REALTIME].now()
+    var ev_init = List[Field]()
+    ev_init.append(Field.int("i", 0))
+    ev_init.append(Field.str("k", "v"))
+    ev_init.append(Field.bool("ok", True))
+    var ev = Event(Level.INFO, "bench", String("tick"), ev_init^, inst)
     var sink = String("")
-    for i in range(N):
-        sink = Color.paint_if(False, Color.RED, "x")
+    var t0 = perf_counter_ns()
+    for _ in range(N):
+        var fl = List[Field]()
+        fl.append(Field.int("i", 0))
+        fl.append(Field.str("k", "v"))
+        fl.append(Field.bool("ok", True))
+        ev = Event(Level.INFO, "bench", String("tick"), fl^, inst)
+        sink = sub._format(ev)
     var t1 = perf_counter_ns()
     print(
-        "Color.paint_if(off):",
+        "json._format(3-fields):",
         Float64(t1 - t0) / Float64(N),
         "ns/call (last=",
         len(sink),
@@ -186,5 +205,5 @@ def main() raises:
     bench_enabled_alwayson_no_fields()
     bench_enabled_alwayson_3_fields()
     bench_fmt_to_stdout()
-    bench_color_paint()
-    bench_color_paint_if_off()
+    bench_fmt_format_only()
+    bench_json_format_only()
